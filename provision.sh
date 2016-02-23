@@ -1,10 +1,15 @@
-# java and wget
-yum -y install java-1.8.0-openjdk-devel
+#!/usr/bin/env bash
+#
+# neeasade
+# provision a streama instance.
+
+# depends
+yum -y install java-1.8.0-openjdk-devel wget mariadb mariadb-server expect git
+
 echo "export JAVA_HOME=/usr/lib/jvm/java-1.8.0-openjdk" >> ~/.bashrc
 . ~/.bashrc
-yum -y install wget
 
-#latest tomcat7
+# latest tomcat7
 cd /tmp
 wget http://www.webhostingjams.com/mirror/apache/tomcat/tomcat-7/v7.0.63/bin/apache-tomcat-7.0.63.tar.gz -O tomcat7.tar.gz
 mkdir /opt/tomcat
@@ -18,7 +23,7 @@ chown -R tomcat:root /opt/tomcat
 firewall-cmd --zone=public --add-port=8080/tcp --permanent
 firewall-cmd --reload
 
-#systemd service for deploy on boot:
+# systemd service for deploy on boot:
 cat >/etc/systemd/system/tomcat.service <<EOL
 # Systemd unit file for tomcat
 [Unit]
@@ -46,18 +51,13 @@ WantedBy=multi-user.target
 EOL
 
 # reload systemd config
-sudo systemctl daemon-reload
+systemctl daemon-reload
 
-# start tomcat
-sudo systemctl start tomcat
-sudo systemctl enable tomcat
-
-yum -y install mariadb mariadb-server
-sudo systemctl start mariadb.service
-sudo systemctl enable mariadb.service
+# start tomcat, mariadb
+systemctl enable tomcat --now
+systemctl enable mariadb.service --now
 
 # automate the install with root and no pass.
-yum -y install expect
 SECURE_MYSQL=$(expect -c "
 set timeout 10
 spawn mysql_secure_installation
@@ -76,26 +76,20 @@ send \"y\r\"
 expect eof
 ")
 
-# I don't know if the below works.
-sudo mysql -u root -e "create database streama;"
-
+# create the database as the root user we've just made
+mysql -u root -e "create database streama;"
 
 # Create upload directory:
 chown -R tomcat:root /data/streama
 
 # compile streama.war and groovy config file thing:
-yum -y install git
-cd
-git clone https://github.com/dularion/streama.git streama
-cd streama
+git clone https://github.com/dularion/streama.git ~/streama && cd ~/streama
+
 # replace the groovy mysql conf with root
 sed -i.bak 's/username = "sa"/username = "root"' grails-app/conf/DataSource.groovy
 ./grailsw war streama.war -Dgrails.env=production
-
 systemctl stop tomcat && rm -rf /opt/tomcat/webapps/stream.war
-
 cp streama.war -t /opt/tomcat/webapps
 
+# restart tomcat
 systemctl start tomcat
-
-
